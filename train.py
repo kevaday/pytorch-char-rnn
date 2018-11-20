@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--initrange', type=float, default=1., help='range to initialize decoder weights with')
     parser.add_argument('--cuda', action='store_true', default=False, help='train the network on GPU with CUDA')
     parser.add_argument('--fastest', action='store_true', default=False, help='set CuDNN to fastest mode')
-    parser.add_argument('--benchmark', action='store_true', default=False, help='use CuDNN benchmark mode to find optimal algorothms')
+    parser.add_argument('--benchmark', action='store_true', default=False, help='use CuDNN benchmark mode to find optimal algorithms')
     parser.add_argument('--init_from', type=str, default=None, help='directory of model file to initialize network from')
     args = parser.parse_args()
 
