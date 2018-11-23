@@ -35,7 +35,7 @@ To sample from a saved model, run ```python sample.py <saved model>``` with the 
 To view the options for sampling, simply run ```python sample.py --help```
 
 ## Example
-Here is an example sample I sampled after training on Mysterious Island by Jules Vernes with the following command:
+Here is an example I sampled after training on Mysterious Island by Jules Vernes with the following command:
 
 ```python train.py ..\text_data\mysterious_island_vernes.txt --rnntype GRU --rnnsize 786 --nlayers 4 --batchsize 100 --seqlength 136 --nepochs 25 --print_every 75 --sample_every 2 --lrdiv 22 --dropout 0.2 --cuda --fastest```
 
