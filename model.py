@@ -4,15 +4,15 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 import numpy as np
-#import codecs
 from utils import get_batches, one_hot_encode, get_lookup_tables
 from os.path import basename
+from math import exp
 
-class CharRNN(nn.Module, object):
-    def __init__(self, chars, int2char, char2int, rnn_type='LSTM', bidirectional=False, n_hidden=512, n_layers=4, dropout=0.3, lr=2e-3, initrange=1, cuda=False, cudnn_fastest=False, cudnn_benchmark=False):
+
+class CharRNN(nn.Module):
+    def __init__(self, text, rnn_type='LSTM', bidirectional=False, n_hidden=512, n_layers=4, dropout=0.3, lr=2e-3, initrange=1, cuda=False, cudnn_fastest=False, cudnn_benchmark=False):
         super().__init__()
 
         self.rnn_type = rnn_type.upper()
@@ -29,21 +29,21 @@ class CharRNN(nn.Module, object):
         if cudnn_fastest: torch.backends.cudnn.fastest = True
         if cudnn_benchmark: torch.backends.cudnn.benchmark = True
 
-        self.chars = chars
-        self.int2char = int2char
-        self.char2int = char2int
+        self.text = text
+        self.int2char, self.char2int = get_lookup_tables(text)
+        self.chars = tuple(self.char2int.keys())
 
         self.dropout = nn.Dropout(dropout)
         if rnn_type in ('LSTM', 'GRU'):
-            self.rnn = getattr(nn, rnn_type)(len(chars), n_hidden, n_layers, dropout=dropout, bidirectional=bidirectional)
+            self.rnn = getattr(nn, rnn_type)(len(self.chars), n_hidden, n_layers, dropout=dropout, bidirectional=bidirectional, batch_first=True)
         else:
             try:
                 nonlin = {'RNN_TANH': 'tanh', 'RNN_RELU': 'relu'}[rnn_type]
             except KeyError:
                 raise ValueError('An invalid option for `--rnntype` was supplied, valid options are `LSTM`, `GRU`, `RNN_TANH`, or `RNN_RELU`')
 
-            self.rnn = nn.RNN(len(chars), n_hidden, n_layers, nonlinearity=nonlin, dropout=dropout)
-        self.decoder = nn.Linear(n_hidden*2 if bidirectional else n_hidden, len(chars))
+            self.rnn = nn.RNN(len(self.chars), n_hidden, n_layers, nonlinearity=nonlin, dropout=dropout, batch_first=True)
+        self.decoder = nn.Linear(n_hidden*2 if bidirectional else n_hidden, len(self.chars))
 
         self.init_weights()
 
@@ -78,25 +78,25 @@ class CharRNN(nn.Module, object):
         # Apply random uniform weights to decoder
         self.decoder.weight.data.uniform_(-self.initrange, self.initrange)
 
-    def init_hidden(self, n_seqs):
+    def init_hidden(self, batch_size):
         ''' Initialize hidden state of rnn
 
             arguments:
-                n_segs: number of sequences
+                batch_size: batch size
 
             returns:
-                new weights torch Variable
+                new weights torch Tensor
                 if rnn type is an LSTM, returns a tuple of 2 of these weights
         '''
         
-        # Create two new tensors with size of n_layers x n_seqs x n_hidden,
+        # Create two new tensors with size of n_layers (x2 if bidirectional) x seq_len x n_hidden,
         # initialized to zero, for hidden state and cell state of RNN
         weight = next(self.parameters()).data
         if self.rnn_type == 'LSTM':
-            return (Variable(weight.new(self.n_layers*2 if self.bidirectional else self.n_layers, n_seqs, self.n_hidden).zero_()),
-                    Variable(weight.new(self.n_layers*2 if self.bidirectional else self.n_layers, n_seqs, self.n_hidden).zero_()))
+            return (weight.new_zeros(self.n_layers*2 if self.bidirectional else self.n_layers, batch_size, self.n_hidden),
+                    weight.new_zeros(self.n_layers*2 if self.bidirectional else self.n_layers, batch_size, self.n_hidden))
         else:
-            return Variable(weight.new(self.n_layers*2 if self.bidirectional else self.n_layers, n_seqs, self.n_hidden).zero_())
+            return weight.new_zeros(self.n_layers*2 if self.bidirectional else self.n_layers, batch_size, self.n_hidden)
 
     def predict(self, char, h=None, cuda=False, top_k=None):
         ''' Predict the character after the given character
@@ -118,12 +118,12 @@ class CharRNN(nn.Module, object):
         x = np.array([[self.char2int[char]]])
         x = one_hot_encode(x, len(self.chars))
         with torch.no_grad():
-            inputs = Variable(torch.from_numpy(x))
+            inputs = torch.from_numpy(x)
         if self.use_cuda:
             inputs = inputs.cuda()
         
         with torch.no_grad():
-            h = repack_hidden(h)
+            h = detach_hidden(h)
         out, h = self.forward(inputs, h)
 
         p = F.softmax(out).data
@@ -141,40 +141,24 @@ class CharRNN(nn.Module, object):
 
         return self.int2char[char], h
 
-    def save(self, filename):
-        checkpoint = {'rnn_type': self.rnn_type,
-                      'n_hidden': self.n_hidden,
-                      'n_layers': self.n_layers,
-                      'bidirectional': self.bidirectional,
-                      'state_dict': self.state_dict(),
-                      'chars': self.chars}
-        with open(filename, 'wb') as f:
-            torch.save(checkpoint, f)
+def save_model(filename, model):
+    with open(filename, 'wb') as f:
+        torch.save(model, f)
 
-    @classmethod
-    def load(cls, filename, *args):
-        with open(filename, 'rb') as f:
-            checkpoint = torch.load(f)
+def load_model(filename):
+    with open(filename, 'rb') as f:
+        model = torch.load(f)
 
-        int2char, char2int = get_lookup_tables(checkpoint['chars'])
-        model = cls(checkpoint['chars'], int2char, char2int,
-                    rnn_type=checkpoint['rnn_type'],
-                    n_hidden=checkpoint['n_hidden'],
-                    n_layers=checkpoint['n_layers'],
-                    bidirectional=checkpoint['bidirectional'],
-                    *args)
-        model.load_state_dict(checkpoint['state_dict'])
+    return model
 
-        return model
-
-def repack_hidden(h):
-    '''Wraps hidden states in new Variables, to detach them from their history.
+def detach_hidden(h):
+    ''' Detach hidden state from their training history.
     '''
     
     if isinstance(h, tuple):
-        h = tuple([Variable(each.data) for each in h])
+        return tuple([detach_hidden(t) for t in h])
     else:
-        h = Variable(h.data)
+        return h.detach()
 
 def train(model, data, textfile, epochs=25, batch_size=48, seq_len=100, lr=2e-3, lrdiv=[20], clip=5, val_fract=0.1, cuda=False, print_every=25, sample_every=5, save_every=1, save_dir='save'):
     ''' Train a language network
@@ -192,7 +176,7 @@ def train(model, data, textfile, epochs=25, batch_size=48, seq_len=100, lr=2e-3,
             cuda: Train the network with CUDA on GPU
             print_every: number of iterations to print training stats after
     '''
-
+    
     model.train()
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
@@ -205,28 +189,29 @@ def train(model, data, textfile, epochs=25, batch_size=48, seq_len=100, lr=2e-3,
         model.cuda()
 
     counter = 0
+    total_loss = 0
     n_chars = len(model.chars)
     for e in range(epochs):
         h = model.init_hidden(batch_size)
         for x, y in get_batches(data, batch_size, seq_len):
             counter += 1
 
-            # create Torch tensors from our data by one-hot encoding it
+            # one-hot encode training data and make the Torch Tensors
             x = one_hot_encode(x, n_chars)
-            x, y = torch.from_numpy(x), torch.from_numpy(y)
+            inputs, targets = torch.from_numpy(x), torch.from_numpy(y)
 
-            inputs, targets = Variable(x), Variable(y)
             if cuda:
                 inputs, targets = inputs.cuda(), targets.cuda()
 
-            # creat new variables for hidden state
-            h = repack_hidden(h);
+            # creat new Tensors for hidden state
+            h = detach_hidden(h)
 
             model.zero_grad()
 
-            output, h = model.forward(inputs, h)
+            output, h = model(inputs, h)
             loss = criterion(output, targets.view(batch_size*seq_len).long())
-
+            total_loss += loss.item()
+            
             loss.backward()
 
             # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs
@@ -247,16 +232,15 @@ def train(model, data, textfile, epochs=25, batch_size=48, seq_len=100, lr=2e-3,
                     
                     # create Torch tensors from our data by one-hot encoding it
                     x = one_hot_encode(x, n_chars)
-                    x, y = torch.from_numpy(x), torch.from_numpy(y)
+                    inputs, targets = torch.from_numpy(x), torch.from_numpy(y)
 
-                    # creat new variables for hidden state
+                    # creat new Tensors for hidden state
                     with torch.no_grad():
-                        val_h = repack_hidden(val_h)
-                        inputs, targets = Variable(x), Variable(y)
+                        val_h = detach_hidden(val_h)
                     if cuda:
                         inputs, targets = inputs.cuda(), targets.cuda()
 
-                    output, val_h = model.forward(inputs, val_h)
+                    output, val_h = model(inputs, val_h)
                     val_loss = criterion(output, targets.view(batch_size*seq_len).long())
 
                     val_losses.append(val_loss.item())
@@ -266,8 +250,8 @@ def train(model, data, textfile, epochs=25, batch_size=48, seq_len=100, lr=2e-3,
                       'Step: {}\t'.format(counter),
                       'Loss: {:.4f}\t'.format(loss.item()),
                       'Val loss: {:.4f}'.format(np.mean(val_losses)),
-                      'Perplexity: {:.4f}'.format(2**loss.item()),
-                      'Val perplexity: {:.4f}'.format(2**np.mean(val_losses)))
+                      'Perplexity: {:.4f}'.format(exp(total_loss/print_every)),
+                      'Val perplexity: {:.4f}'.format(exp(sum(val_losses)/print_every)))
 
         # divide learning rate by 10 if it is the specified epoch(s)
         for i in lrdiv:
@@ -280,14 +264,16 @@ def train(model, data, textfile, epochs=25, batch_size=48, seq_len=100, lr=2e-3,
 
         if (e+1) % sample_every == 0:
             print(f'Epoch {e+1}: Sampling from model:')
+            print('-'*50)
             print(sample(model, length=100, cuda=cuda))
+            print('-'*50)
             model.train()
 
         if (e+1) % save_every == 0:
             # save the model
 
             save_file = f'{save_dir}/{basename(textfile)}_{loss}_{e+1}.ckpt'
-            model.save(save_file)
+            save_model(save_file, model)
             print(f'Network saved as {save_file}')
 
     return np.mean(val_losses)
@@ -311,9 +297,6 @@ def sample(model, length, prime='The ', top_k=None, cuda=False, file=None, encod
     if not prime or prime == '':
         raise ValueError('Prime string must not be void')
 
-    if not encoding and file:
-        from utils import get_encoding
-        encoding = get_encoding(file)
     elif not file and encoding:
         encoding = None
     
@@ -330,14 +313,19 @@ def sample(model, length, prime='The ', top_k=None, cuda=False, file=None, encod
 
     chars.append(char)
 
-    for _ in range(length):
+    for i in range(length):
         char, h = model.predict(chars[-1], h, cuda=cuda, top_k=top_k)
         chars.append(char)
         if file:
-            print(f'Predicted {len(chars)}/{length} chars\r', end='', flush=True)
+            if i % 10 == 0:
+                print(f'Predicted {len(chars)-len(prime)-1}/{length} chars\r', end='', flush=True)
 
     if file:
-        with open(file, 'w', encoding=encoding) as f:
-            f.write(''.join(chars))
+        if encoding:
+            with open(file, 'w', encoding=encoding) as f:
+                f.write(''.join(chars))
+        else:
+            with open(file, 'w') as f:
+                f.write(''.join(chars))
 
     return ''.join(chars)
