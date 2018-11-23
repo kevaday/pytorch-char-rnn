@@ -1,9 +1,8 @@
 import argparse
 import os
 import numpy as np
-#import codecs
 
-from model import CharRNN, train
+from model import CharRNN, train, load_model
 from utils import get_lookup_tables
 
 def main():
@@ -49,25 +48,19 @@ def main():
     chars = tuple(char2int.keys())
 
     if not args.init_from:
-        model = CharRNN(chars, int2char, char2int, rnn_type=args.rnntype,
+        model = CharRNN(text, rnn_type=args.rnntype,
                         bidirectional=args.bidirectional,
                         n_hidden=args.rnnsize, n_layers=args.nlayers, dropout=args.dropout,
                         lr=args.lr, initrange=args.initrange, cuda=args.cuda,
                         cudnn_fastest=args.fastest, cudnn_benchmark=args.benchmark)
     else:
-        model = CharRNN.load(args.init_from, chars, int2char, char2int,
-                             dropout=args.dropout, lr=args.lr, initrange=args.initrange, cuda=args.cuda,
-                             cudnn_fastest=args.fastest, cudnn_benchmark=args.benchmark)
+        model = load_model(args.init_from)
     
     val_loss = train(model, encoded, os.path.basename(args.infile), epochs=args.nepochs,
                      batch_size=args.batchsize, seq_len=args.seqlength, lr=args.lr,
                      clip=args.gradclip, val_fract=args.valfract, cuda=args.cuda,
                      print_every=args.print_every, sample_every=args.sample_every,
                      save_every=args.save_every, save_dir=args.savepath)
-
-    savefile = f'{os.path.basename(args.infile)}_final_{val_loss:.4f}.ckpt'
-    model.save(os.path.join(args.savepath, savefile))
-    print(f'Network saved as {savefile}')
 
 if __name__ == '__main__':
     main()
