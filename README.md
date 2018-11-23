@@ -60,3 +60,6 @@ holes and days to give an event to him to lose.
 
 > But after all, it had scarcely followed, the sea had very much far, belonging to
 the workswood with, by this mass, had left great strike.
+
+
+[Here's](https://drive.google.com/open?id=1h2q9rEHLE_g_z_rvCq2SCs1Pif0eIo-Q) the link for the trained model on Mysterious Island
