@@ -252,9 +252,9 @@ def train(model, data, textfile, epochs=25, batch_size=48, seq_len=100, lr=2e-3,
                       'Step: {}\t'.format(counter),
                       'Loss: {:.4f}\t'.format(loss.item()),
                       'Val loss: {:.4f}'.format(np.mean(val_losses)),
-                      'Perplexity: {:.4f}'.format(exp(total_loss/print_every)),
-                      'Val perplexity: {:.4f}'.format(exp(sum(val_losses)/print_every)))
-
+                      'Perplexity: {:.4f}'.format(exp(total_loss/print_every)))
+                total_loss = 0
+                
         # divide learning rate by 10 if it is the specified epoch(s)
         for i in lrdiv:
             if (e+1) % i == 0:
