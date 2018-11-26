@@ -60,7 +60,8 @@ class CharRNN(nn.Module):
         if self.bidirectional:
             x, h = self.rnn(x, hc)
             x = self.dropout(x)
-            x = self.decoder(x.view(x.size(0)*x.size(1), x.size(2)))
+            x = x.view(x.size(0)*x.size(1), self.n_hidden*2)
+            x = self.decoder(x)
         else:
             x, h = self.rnn(x, hc)
             x = self.dropout(x)
@@ -207,8 +208,9 @@ def train(model, data, textfile, epochs=25, batch_size=48, seq_len=100, lr=2e-3,
             h = detach_hidden(h)
 
             model.zero_grad()
-
+            
             output, h = model(inputs, h)
+
             loss = criterion(output, targets.view(batch_size*seq_len).long())
             total_loss += loss.item()
             
