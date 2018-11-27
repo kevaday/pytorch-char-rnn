@@ -44,22 +44,20 @@ so. He had gained more caresult, in a dark step by the light of the
 sand. There was no reason for staring anything. Put off in his
 delight, the necessity of reporting among the works to go.
 
-> They preserved it for more uneasy, for the shade of the plateau
-flowed under but from the distance of Lincoln Island, his wieth
-had occurred since their airrish consulting in the first time the second
-well-ware ready to fix the wind, a deserted canal, and who would have no longer
-any physicight must have been talking of himself.
+Here is another better example after training it with:
 
-> During these terrible war was serious, caught right to propose that
-they stormed away. The telescope, could they see that shell was then to
-close the bottom of the well, which they supposed, the same castaways
-could fire.
+```python train.py ..\text_data\mysterious_island_vernes.txt --rnntype LSTM --rnnsize 1500 --nlayers 4 --batchsize 64 --seqlength 128 --nepochs 30 --print_every 75 --sample_every 2 --lrdiv 22 --dropout 0.1 --cuda --fastest```
 
-> The reporter and his companions could find himself in a farth brave
-holes and days to give an event to him to lose.
+> “I beg your pardon!” returned Pencroft.
+> “Why?”
+> “Because that pleases me!”
+> “Are you very fond of pig then, Pencroft?”
+> “I am very fond of pig,” replied the sailor, dragging after him
+> the body of the animal.
 
-> But after all, it had scarcely followed, the sea had very much far, belonging to
-the workswood with, by this mass, had left great strike.
+> While Neb skinned the jaguar, his companions had reached the
+> marsh of the first magnitude.
 
+If you've read Mysterious Island, you would see that some lines from the above sample are memorized. This is due to the low dropout. Although it memorized some things above, it also added in some twists if its own. For example, the line '“I am very fond of pig,” replied'... is memorized, but it put together 2 different lines, and actually did it in the right context.
 
 [Here's](https://drive.google.com/open?id=1h2q9rEHLE_g_z_rvCq2SCs1Pif0eIo-Q) the link for the trained model on Mysterious Island
